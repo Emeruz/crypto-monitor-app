@@ -52,7 +52,7 @@ const Chart = ({ coinId = 'bitcoin' }) => {
             time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             price: newPrice
           };
-          setChartData(prev => [...prev.slice(-200), newDataPoint]); // Keep last 200 points
+          setChartData(prev => [...prev.slice(-1000), newDataPoint]); // Keep last 1000 points
         }
       }
     } catch (err) {
