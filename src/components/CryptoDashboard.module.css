@@ -249,3 +249,59 @@ input:checked + .slider:before {
   opacity: 0.6;
   pointer-events: none;
 }
+/* Animation styles */
+.price {
+  transition: color 0.3s ease;
+}
+
+.positive {
+  transition: all 0.3s ease;
+}
+
+.negative {
+  transition: all 0.3s ease;
+}
+
+.coinTab {
+  transition: all 0.2s ease;
+  transform-origin: center;
+}
+
+.coinTab:hover {
+  transform: translateY(-2px);
+}
+
+.activeTab {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.saveButton {
+  transition: all 0.3s ease;
+}
+
+/* Loading animation */
+.loadingPrice {
+  position: relative;
+}
+
+.loadingPrice::after {
+  content: "...";
+  animation: dots 1.5s steps(5, end) infinite;
+}
+
+@keyframes dots {
+  0%, 20% { content: "."; }
+  40% { content: ".."; }
+  60%, 100% { content: "..."; }
+}
+
+/* Pulse animation for price updates */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+.price-update {
+  animation: pulse 0.5s ease;
+}

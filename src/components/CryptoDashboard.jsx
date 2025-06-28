@@ -1,6 +1,54 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useGSAP } from '@gsap/react';
 import Chart from './Chart';
 import styles from './CryptoDashboard.module.css';
+import { gsap } from 'gsap';
+import { DrawSVGPlugin } from 'gsap/DrawSVGPlugin';
+
+gsap.registerPlugin(DrawSVGPlugin);
+
+const AnimatedCheckbox = ({ checked, onChange }) => {  
+  const checkboxWrapperRef = useRef(null);  
+  const tweenRef = useRef(null);  
+
+  useGSAP(() => {  
+    if (checkboxWrapperRef.current) {  
+      tweenRef.current = gsap.to(checkboxWrapperRef.current, {  
+        rotation: 360,  
+        duration: 2,  
+        repeat: -1,  
+        ease: 'linear',  
+        paused: true,  
+        transformOrigin: "center"  
+      });  
+    }  
+  }, []);  
+
+  const handleCheckboxChange = (e) => {  
+    const isChecked = e.target.checked;  
+    onChange(isChecked);
+    if (isChecked) {  
+      tweenRef.current?.play();  
+    } else {  
+      tweenRef.current?.pause().progress(0);  
+    }  
+  };
+
+  return (
+    <div>  
+      <span  
+        ref={checkboxWrapperRef}  
+        style={{ display: 'inline-block', transformOrigin: 'center' }}  
+      >  
+        <input  
+          type="checkbox"  
+          checked={checked}
+          onChange={handleCheckboxChange}  
+        />  
+      </span>  
+    </div>
+  );
+};
 
 const CryptoDashboard = () => {
   const [selectedCoin, setSelectedCoin] = useState('bitcoin');
@@ -8,6 +56,7 @@ const CryptoDashboard = () => {
   const [allCoinsData, setAllCoinsData] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   // Alert states
   const [alertEnabled, setAlertEnabled] = useState(false);
@@ -25,94 +74,98 @@ const CryptoDashboard = () => {
     { id: 'cardano', label: 'ADA', icon: '🔵' },
   ];
 
-  // Fetch all coins data
   const fetchAllCoinsData = async () => {
     try {
       const coinIds = coins.map(c => c.id).join(',');
-      const response = await fetch(
+      const res = await fetch(
         `https://api.coingecko.com/api/v3/simple/price?ids=${coinIds}&vs_currencies=usd&include_24hr_change=true`
       );
-      const data = await response.json();
+      const data = await res.json();
       setAllCoinsData(data);
-    } catch (error) {
-      console.error('Error fetching all coins:', error);
+    } catch (err) {
+      console.error('All coins fetch error:', err);
     }
   };
 
-  // Fetch detailed data for selected coin
   const fetchSelectedCoinData = async () => {
     setIsLoading(true);
+    setFetchError(false);
     try {
-      const response = await fetch(
+      const res = await fetch(
         `https://api.coingecko.com/api/v3/coins/${selectedCoin}?localization=false&tickers=false&market_data=true`
       );
-      const data = await response.json();
-      
+
+      if (!res.ok) throw new Error('API failed');
+
+      const data = await res.json();
       setPriceData({
         usd: data.market_data.current_price.usd,
         usd_24h_change: data.market_data.price_change_percentage_24h,
         high_24h: data.market_data.high_24h.usd,
-        low_24h: data.market_data.low_24h.usd
+        low_24h: data.market_data.low_24h.usd,
       });
       setLastUpdated(new Date());
-      
-      // Check alerts
+
+      // Alert check
       if (alertActive && savedUpper && savedLower) {
-        const currentPrice = data.market_data.current_price.usd;
-        if (currentPrice >= savedUpper) {
-          triggerAlert('upper', currentPrice);
-        } else if (currentPrice <= savedLower) {
-          triggerAlert('lower', currentPrice);
-        }
+        const curPrice = data.market_data.current_price.usd;
+        if (curPrice >= savedUpper) triggerAlert('upper', curPrice);
+        if (curPrice <= savedLower) triggerAlert('lower', curPrice);
       }
-    } catch (error) {
-      console.error('Error fetching coin data:', error);
+    } catch (err) {
+      console.error('Selected coin fetch error:', err);
+      setFetchError(true);
+      setPriceData({
+        usd: 50000,
+        usd_24h_change: 0.5,
+        high_24h: 50500,
+        low_24h: 49500,
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const triggerAlert = (type, currentPrice) => {
-    const message = type === 'upper' 
-      ? `🚨 ${selectedCoin.toUpperCase()} exceeded $${savedUpper}! (Current: $${currentPrice.toFixed(2)})`
-      : `🚨 ${selectedCoin.toUpperCase()} dropped below $${savedLower}! (Current: $${currentPrice.toFixed(2)})`;
-    
-    alert(message);
+    const msg =
+      type === 'upper'
+        ? `🚨 ${selectedCoin.toUpperCase()} crossed above $${savedUpper} (Now: $${currentPrice.toFixed(2)})`
+        : `🚨 ${selectedCoin.toUpperCase()} dropped below $${savedLower} (Now: $${currentPrice.toFixed(2)})`;
+    alert(msg);
     setAlertActive(false);
   };
 
-  // Initialize and set up intervals
   useEffect(() => {
     fetchAllCoinsData();
     fetchSelectedCoinData();
 
-    const allCoinsInterval = setInterval(fetchAllCoinsData, 30000);
-    const selectedCoinInterval = setInterval(fetchSelectedCoinData, 15000);
+    const allInterval = setInterval(fetchAllCoinsData, 30000);
+    const selectedInterval = setInterval(fetchSelectedCoinData, 15000);
 
     return () => {
-      clearInterval(allCoinsInterval);
-      clearInterval(selectedCoinInterval);
+      clearInterval(allInterval);
+      clearInterval(selectedInterval);
     };
   }, [selectedCoin, alertActive]);
 
   const handleSaveAlert = () => {
     if (!tempUpper || !tempLower) {
-      alert('Please set both upper and lower limits');
+      alert('Set both upper and lower limits');
       return;
     }
     if (parseFloat(tempUpper) <= parseFloat(tempLower)) {
-      alert('Upper limit must be greater than lower limit');
+      alert('Upper limit must be higher than lower limit');
       return;
     }
-
     setSavedUpper(parseFloat(tempUpper));
     setSavedLower(parseFloat(tempLower));
     setAlertActive(true);
-    alert('Alert saved successfully!');
+    alert('✅ Alert saved!');
   };
 
   return (
     <div className={styles.page}>
+      {/* Header */}
       <header className={styles.header}>
         <div className={styles.logo}>
           <span className={styles.logoIcon}>📈</span>
@@ -124,7 +177,7 @@ const CryptoDashboard = () => {
       </header>
 
       <main className={styles.grid}>
-        {/* Main Chart Section */}
+        {/* Main Card */}
         <div className={styles.mainCard}>
           <div className={styles.coinHeader}>
             <div className={styles.coinTitle}>
@@ -150,28 +203,20 @@ const CryptoDashboard = () => {
           </div>
 
           <div className={styles.priceDisplay}>
-            <div className={styles.currentPrice}>
-              {isLoading ? (
-                <div className={styles.loadingPrice}>Loading...</div>
-              ) : (
-                <>
-                  <span className={styles.price}>${priceData?.usd?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-                  <span 
-                    className={`${styles.priceChange} ${priceData?.usd_24h_change >= 0 ? styles.positive : styles.negative}`}
-                  >
-                    {priceData?.usd_24h_change >= 0 ? '▲' : '▼'} {Math.abs(priceData?.usd_24h_change?.toFixed(2))}% (24h)
-                  </span>
-                </>
-              )}
-            </div>
-            <div className={styles.priceRange}>
-              {priceData && (
-                <>
-                  <span>24h High: ${priceData.high_24h.toLocaleString()}</span>
-                  <span>24h Low: ${priceData.low_24h.toLocaleString()}</span>
-                </>
-              )}
-            </div>
+            {isLoading ? (
+              <p>Loading price...</p>
+            ) : fetchError ? (
+              <p style={{ color: 'red' }}>⚠️ Error loading data. Showing fallback.</p>
+            ) : (
+              <>
+                <h1>${priceData.usd.toLocaleString()}</h1>
+                <p className={priceData.usd_24h_change >= 0 ? styles.positive : styles.negative}>
+                  {priceData.usd_24h_change >= 0 ? '▲' : '▼'} {Math.abs(priceData.usd_24h_change).toFixed(2)}% (24h)
+                </p>
+                <p>24h High: ${priceData.high_24h.toLocaleString()}</p>
+                <p>24h Low: ${priceData.low_24h.toLocaleString()}</p>
+              </>
+            )}
           </div>
 
           <div className={styles.chartContainer}>
@@ -190,114 +235,89 @@ const CryptoDashboard = () => {
                 <span className={styles.tabPrice}>
                   ${allCoinsData[c.id]?.usd?.toFixed(2) || '...'}
                 </span>
-                <span className={`${styles.tabChange} ${allCoinsData[c.id]?.usd_24h_change >= 0 ? styles.positive : styles.negative}`}>
-                  {allCoinsData[c.id]?.usd_24h_change >= 0 ? '↑' : '↓'} {Math.abs(allCoinsData[c.id]?.usd_24h_change?.toFixed(2) || 0)}%
+                <span
+                  className={`${styles.tabChange} ${
+                    allCoinsData[c.id]?.usd_24h_change >= 0 ? styles.positive : styles.negative
+                  }`}
+                >
+                  {allCoinsData[c.id]?.usd_24h_change >= 0 ? '↑' : '↓'}{' '}
+                  {Math.abs(allCoinsData[c.id]?.usd_24h_change || 0).toFixed(2)}%
                 </span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Alert Sidebar */}
+        {/* Right Sidebar - Alerts */}
         <aside className={styles.sidebar}>
           <div className={styles.alertCard}>
-            <h3 className={styles.cardTitle}>Price Alerts</h3>
-            
+            <h3>Price Alerts</h3>
             <div className={styles.alertToggle}>
               <label>Enable Alerts</label>
-              <label className={styles.switch}>
-                <input 
-                  type="checkbox" 
-                  checked={alertEnabled}
-                  onChange={(e) => setAlertEnabled(e.target.checked)}
-                />
-                <span className={styles.slider}></span>
-              </label>
+              <AnimatedCheckbox 
+                checked={alertEnabled}
+                onChange={setAlertEnabled}
+              />
             </div>
 
-            <div className={`${styles.alertForm} ${!alertEnabled ? styles.disabled : ''}`}>
-              <div className={styles.alertInputGroup}>
-                <label>Upper Limit (USD)</label>
+            <fieldset disabled={!alertEnabled} className={styles.alertForm}>
+              <label>Upper Limit (USD)</label>
+              <input
+                type="number"
+                value={tempUpper}
+                onChange={(e) => setTempUpper(e.target.value)}
+                placeholder="e.g. 70000"
+              />
+
+              <label>Lower Limit (USD)</label>
+              <input
+                type="number"
+                value={tempLower}
+                onChange={(e) => setTempLower(e.target.value)}
+                placeholder="e.g. 60000"
+              />
+
+              <label>Notification Method</label>
+              <div>
                 <input
-                  type="number"
-                  value={tempUpper}
-                  onChange={(e) => setTempUpper(e.target.value)}
-                  placeholder="e.g. 70000"
-                  disabled={!alertEnabled}
-                />
-              </div>
-
-              <div className={styles.alertInputGroup}>
-                <label>Lower Limit (USD)</label>
+                  type="radio"
+                  value="browser"
+                  checked={tempMethod === 'browser'}
+                  onChange={() => setTempMethod('browser')}
+                /> Browser<br />
                 <input
-                  type="number"
-                  value={tempLower}
-                  onChange={(e) => setTempLower(e.target.value)}
-                  placeholder="e.g. 60000"
-                  disabled={!alertEnabled}
-                />
+                  type="radio"
+                  value="email"
+                  checked={tempMethod === 'email'}
+                  onChange={() => setTempMethod('email')}
+                /> Email<br />
+                <input
+                  type="radio"
+                  value="telegram"
+                  checked={tempMethod === 'telegram'}
+                  onChange={() => setTempMethod('telegram')}
+                /> Telegram
               </div>
 
-              <div className={styles.notificationMethod}>
-                <label>Notification Method</label>
-                <div className={styles.methodOptions}>
-                  <label className={styles.methodOption}>
-                    <input
-                      type="radio"
-                      value="browser"
-                      checked={tempMethod === 'browser'}
-                      onChange={() => setTempMethod('browser')}
-                      disabled={!alertEnabled}
-                    />
-                    <span>Browser</span>
-                  </label>
-                  <label className={styles.methodOption}>
-                    <input
-                      type="radio"
-                      value="email"
-                      checked={tempMethod === 'email'}
-                      onChange={() => setTempMethod('email')}
-                      disabled={!alertEnabled}
-                    />
-                    <span>Email</span>
-                  </label>
-                  <label className={styles.methodOption}>
-                    <input
-                      type="radio"
-                      value="telegram"
-                      checked={tempMethod === 'telegram'}
-                      onChange={() => setTempMethod('telegram')}
-                      disabled={!alertEnabled}
-                    />
-                    <span>Telegram</span>
-                  </label>
-                </div>
-              </div>
-
-              <button 
-                className={styles.saveButton}
+              <button
                 onClick={handleSaveAlert}
-                disabled={!alertEnabled}
+                className={styles.saveButton}
               >
                 Save Alert Settings
               </button>
-            </div>
+            </fieldset>
           </div>
 
           <div className={styles.activeAlertsCard}>
-            <h3 className={styles.cardTitle}>Active Alerts</h3>
+            <h3>Active Alerts</h3>
             {alertActive ? (
               <div className={styles.activeAlert}>
-                <div className={styles.alertIcon}>🔔</div>
-                <div className={styles.alertDetails}>
-                  <strong>{selectedCoin.toUpperCase()}</strong>
-                  <p>Alert set between ${savedLower} - ${savedUpper}</p>
-                  <small>Notification: {tempMethod}</small>
-                </div>
+                <strong>{selectedCoin.toUpperCase()}</strong>
+                <p>Alert between ${savedLower} - ${savedUpper}</p>
+                <small>Notify via {tempMethod}</small>
               </div>
             ) : (
               <div className={styles.noAlerts}>
-                <div className={styles.noAlertsIcon}>🔕</div>
                 <p>No active alerts</p>
                 <small>Set price alerts to get notified</small>
               </div>
